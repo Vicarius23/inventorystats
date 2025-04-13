@@ -1,3 +1,5 @@
+//Version 0.7
+// - Added Ally stats to totals
 //Version 0.6
 // - Added the combined efficiency column when selecting to sort by either red or blue
 //Version 0.5
@@ -34,6 +36,69 @@ async function getNameFromFOEHelperDB() {
         };
         request.onerror = e => reject(e.target.error);
     });
+}
+
+function addAllyStats(totals) {
+	let allyList = MainParser?.Allies?.allyList || {};
+
+	for (let allyId in allyList) {
+		let ally = allyList[allyId];
+		if (!ally || !ally.currentLevel) continue;
+
+		let boostsArr = ally.currentLevel.boosts || [];
+		for (let boost of boostsArr) {
+			let tFeature = boost.targetedFeature;
+			if (typeof tFeature === "string") {
+				tFeature = [tFeature];
+				if (tFeature[0] !== "guild_raids") {
+					tFeature.push("all");
+				}
+			}
+
+			let bType = boost.type;
+			let val = boost.value || 0;
+
+			let appliesToQI   = tFeature.includes("guild_raids");
+			let appliesToCity = tFeature.includes("all");
+
+			if (bType === "att_boost_attacker") {
+				if (appliesToCity) totals.attackingAttack += val; // new
+				if (appliesToQI)   totals.QIAttackingAttack += val; // new
+			}
+			else if (bType === "def_boost_attacker") {
+				if (appliesToCity) totals.attackingDefense += val; // new
+				if (appliesToQI)   totals.QIAttackingDefense += val; // new
+			}
+			else if (bType === "att_def_boost_attacker") {
+				if (appliesToCity) {
+					totals.attackingAttack  += val; // new
+					totals.attackingDefense += val; // new
+				}
+				if (appliesToQI) {
+					totals.QIAttackingAttack  += val; // new
+					totals.QIAttackingDefense += val; // new
+				}
+			}
+			else if (bType === "att_boost_defender") {
+				if (appliesToCity) totals.defendingAttack += val; // new
+				if (appliesToQI)   totals.QIDefendingAttack += val; // new
+			}
+			else if (bType === "def_boost_defender") {
+				if (appliesToCity) totals.defendingDefense += val; // new
+				if (appliesToQI)   totals.QIDefendingDefense += val; // new
+			}
+			else if (bType === "att_def_boost_defender") {
+				if (appliesToCity) {
+					totals.defendingAttack  += val; // new
+					totals.defendingDefense += val; // new
+				}
+				if (appliesToQI) {
+					totals.QIDefendingAttack  += val; // new
+					totals.QIDefendingDefense += val; // new
+				}
+			}
+		}
+	}
 }
 
 class BuildingStats {
@@ -489,8 +554,8 @@ class BuildingStats {
     calculateTotals(buildingEntries) {
         let totalAOffense = 0;
         let totalADefense = 0;
-        let totalDDefense = 0;
         let totalDOffense = 0;
+        let totalDDefense = 0;
         let GBs = !this.stats.isOther;
 
         // QI additions
@@ -500,7 +565,6 @@ class BuildingStats {
         let totalQI_DDefense = 0;
 
         buildingEntries.forEach(({ Aoffense, Adefense, Doffense, Ddefense, quantity, cityentity_id, type,
-                                   // QI additions
                                    QI_Aoffense, QI_Adefense, QI_Doffense, QI_Ddefense }) => {
             if (!GBs && cityentity_id.indexOf("Landmark") >= 0)
                 return;
@@ -509,14 +573,38 @@ class BuildingStats {
             totalDOffense += Doffense * quantity;
             totalDDefense += Ddefense * quantity;
 
-            // QI additions
             totalQI_AOffense += (QI_Aoffense || 0) * quantity;
             totalQI_ADefense += (QI_Adefense || 0) * quantity;
             totalQI_DOffense += (QI_Doffense || 0) * quantity;
             totalQI_DDefense += (QI_Ddefense || 0) * quantity;
         });
+
+        // Place partial sums in an object for ally merging
+        let totals = {
+            attackingAttack: totalAOffense,
+            attackingDefense: totalADefense,
+            defendingAttack: totalDOffense,
+            defendingDefense: totalDDefense,
+            QIAttackingAttack: totalQI_AOffense,
+            QIAttackingDefense: totalQI_ADefense,
+            QIDefendingAttack: totalQI_DOffense,
+            QIDefendingDefense: totalQI_DDefense
+        };
+
+        // Merge in ally stats
+        addAllyStats(totals);
+
+        // Overwrite local totals after merging
+        totalAOffense = totals.attackingAttack;
+        totalADefense = totals.attackingDefense;
+        totalDOffense = totals.defendingAttack;
+        totalDDefense = totals.defendingDefense;
+        totalQI_AOffense = totals.QIAttackingAttack;
+        totalQI_ADefense = totals.QIAttackingDefense;
+        totalQI_DOffense = totals.QIDefendingAttack;
+        totalQI_DDefense = totals.QIDefendingDefense;
+
         this.overlay.find(".totals").html(` Player: <span class='${this.stats.isOther?"player-name other":"player-name own"}'>${this.stats.currentPlayer}</span> | Era: ${this.stats.era}<br/>A. Offense: ${totalAOffense} | A. Defense: ${totalADefense} | D. Offense: ${totalDOffense} | D. Defense: ${totalDDefense}`
-            // QI additions
             + `<br/>QI: A. Offense: ${totalQI_AOffense} | A. Defense: ${totalQI_ADefense} | D. Offense: ${totalQI_DOffense} | D. Defense: ${totalQI_DDefense}`
             + (GBs ? "" :  "<Br/><i><small>Not including GBs</small></i>")
         );
